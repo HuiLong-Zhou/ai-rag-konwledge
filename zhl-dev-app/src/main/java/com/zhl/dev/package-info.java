@@ -4,4 +4,4 @@
  * @author zhl
  * @since 2026-02-01 17:10
  */
-package com.zhl.dev.app;
+package com.zhl.dev;
