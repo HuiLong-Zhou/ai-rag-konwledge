@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI对话助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* 自定义滚动条样式 */
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* 打字机效果 */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        .typing-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: #4f46e5;
+            margin-left: 2px;
+            vertical-align: middle;
+            animation: blink 1s infinite;
+        }
+
+        /* 消息气泡动画 */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-fade-in {
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        /* 加载动画 */
+        .loading-dots:after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80%, 100% { content: '...'; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+<div class="flex h-screen overflow-hidden">
+    <!-- 左侧边栏 -->
+    <div class="flex flex-col w-64 bg-white border-r border-gray-200">
+        <!-- 标题区域 -->
+        <div class="p-4 border-b border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h1 class="text-xl font-bold text-gray-800">AI对话助手</h1>
+                <div class="text-xs px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full">
+                    <i class="fas fa-circle text-xs mr-1"></i> 运行中
+                </div>
+            </div>
+
+            <!-- 新建聊天按钮 -->
+            <button id="newChatBtn" class="w-full flex items-center justify-center py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                <i class="fas fa-plus mr-2"></i> 新建聊天
+            </button>
+        </div>
+
+        <!-- 模型选择 -->
+        <div class="p-4 border-b border-gray-200">
+            <label class="block text-sm font-medium text-gray-700 mb-2">选择模型</label>
+            <div class="relative">
+                <select id="modelSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="deepseek-r1:1.5b">deepseek-r1:1.5b</option>
+                    <option value="llama3.2">llama3.2</option>
+                    <option value="mistral">mistral</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 聊天列表 -->
+        <div class="flex-1 overflow-y-auto scrollbar-thin">
+            <div class="p-2">
+                <h2 class="text-sm font-medium text-gray-500 px-2 mb-2">聊天记录</h2>
+                <div id="chatList" class="space-y-1">
+                    <!-- 聊天项将通过JS动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部信息 -->
+        <div class="p-4 border-t border-gray-200">
+            <div class="text-xs text-gray-500">
+                <p>使用 <span class="font-medium">Spring AI</span> 和 <span class="font-medium">Ollama</span> 提供支持</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="flex-1 flex flex-col">
+        <!-- 当前聊天标题栏 -->
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
+            <div class="flex items-center">
+                <h2 id="currentChatTitle" class="text-lg font-medium text-gray-800 mr-2">新聊天</h2>
+                <button id="renameChatBtn" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-edit text-sm"></i>
+                </button>
+            </div>
+            <button id="deleteChatBtn" class="text-red-600 hover:text-red-800">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        </div>
+
+        <!-- 对话区域 -->
+        <div id="chatContainer" class="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+            <!-- 初始欢迎消息 -->
+            <div class="flex justify-center">
+                <div class="max-w-2xl w-full">
+                    <div class="text-center py-12">
+                        <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 mb-4">
+                            <i class="fas fa-robot text-2xl text-indigo-600"></i>
+                        </div>
+                        <h3 class="text-2xl font-medium text-gray-800 mb-2">AI对话助手</h3>
+                        <p class="text-gray-600">选择左侧的聊天记录或创建一个新的对话开始交流</p>
+                        <p class="text-sm text-gray-500 mt-4">支持流式响应，体验更自然的对话</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="border-t border-gray-200 bg-white p-4">
+            <div class="max-w-3xl mx-auto">
+                <!-- 输入框 -->
+                <div class="flex items-end border border-gray-300 rounded-lg p-2 bg-gray-50 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                    <div class="flex-1">
+                            <textarea
+                                    id="messageInput"
+                                    rows="2"
+                                    placeholder="输入您的问题..."
+                                    class="w-full border-0 bg-transparent focus:ring-0 focus:outline-none resize-none"
+                            ></textarea>
+                    </div>
+                    <div class="ml-2 flex">
+                        <button id="sendBtn" class="flex items-center justify-center w-10 h-10 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 快捷键提示 -->
+                <div class="flex justify-between items-center mt-2 text-xs text-gray-500">
+                    <div>
+                            <span class="inline-flex items-center mr-3">
+                                <kbd class="px-1 py-0.5 bg-gray-100 rounded border border-gray-300">Enter</kbd>
+                                <span class="ml-1">发送消息</span>
+                            </span>
+                        <span class="inline-flex items-center">
+                                <kbd class="px-1 py-0.5 bg-gray-100 rounded border border-gray-300">Shift</kbd>
+                                <span class="mx-1">+</span>
+                                <kbd class="px-1 py-0.5 bg-gray-100 rounded border border-gray-300">Enter</kbd>
+                                <span class="ml-1">换行</span>
+                            </span>
+                    </div>
+                    <div id="typingIndicator" class="hidden items-center text-indigo-600">
+                        <div class="loading-dots mr-1"></div>
+                        <span>AI正在思考</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重命名聊天模态框 -->
+<div id="renameModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 class="text-lg font-medium text-gray-800 mb-4">重命名聊天</h3>
+        <input
+                type="text"
+                id="renameInput"
+                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-4"
+                placeholder="输入新的聊天标题"
+        >
+        <div class="flex justify-end space-x-3">
+            <button id="cancelRenameBtn" class="px-4 py-2 text-gray-700 hover:text-gray-900">取消</button>
+            <button id="confirmRenameBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">确认</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 状态管理
+    const state = {
+        chats: [],
+        currentChatId: null,
+        currentEventSource: null,
+        isTyping: false
+    };
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 从localStorage加载聊天记录
+        loadChatsFromStorage();
+
+        // 绑定事件监听器
+        document.getElementById('newChatBtn').addEventListener('click', createNewChat);
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('messageInput').addEventListener('keydown', handleKeyPress);
+        document.getElementById('deleteChatBtn').addEventListener('click', deleteCurrentChat);
+        document.getElementById('renameChatBtn').addEventListener('click', showRenameModal);
+        document.getElementById('confirmRenameBtn').addEventListener('click', renameCurrentChat);
+        document.getElementById('cancelRenameBtn').addEventListener('click', hideRenameModal);
+
+        // 如果没有任何聊天，创建一个默认聊天
+        if (state.chats.length === 0) {
+            createNewChat();
+        }
+    });
+
+    // 从本地存储加载聊天记录
+    function loadChatsFromStorage() {
+        const savedChats = localStorage.getItem('ai_chats');
+        if (savedChats) {
+            state.chats = JSON.parse(savedChats);
+            renderChatList();
+
+            // 尝试恢复当前聊天
+            const currentChatId = localStorage.getItem('current_chat_id');
+            if (currentChatId) {
+                const chat = state.chats.find(c => c.id === currentChatId);
+                if (chat) {
+                    setCurrentChat(chat.id);
+                }
+            } else if (state.chats.length > 0) {
+                setCurrentChat(state.chats[0].id);
+            }
+        }
+    }
+
+    // 保存聊天记录到本地存储
+    function saveChatsToStorage() {
+        localStorage.setItem('ai_chats', JSON.stringify(state.chats));
+        if (state.currentChatId) {
+            localStorage.setItem('current_chat_id', state.currentChatId);
+        }
+    }
+
+    // 创建新聊天
+    function createNewChat() {
+        const chatId = 'chat_' + Date.now();
+        const newChat = {
+            id: chatId,
+            title: `新聊天 ${state.chats.length + 1}`,
+            messages: [],
+            model: document.getElementById('modelSelect').value,
+            createdAt: new Date().toISOString()
+        };
+
+        state.chats.unshift(newChat); // 添加到开头
+        state.currentChatId = chatId;
+
+        renderChatList();
+        renderChatMessages();
+        saveChatsToStorage();
+
+        // 清空输入框
+        document.getElementById('messageInput').value = '';
+        document.getElementById('messageInput').focus();
+    }
+
+    // 设置当前聊天
+    function setCurrentChat(chatId) {
+        state.currentChatId = chatId;
+        renderChatList();
+        renderChatMessages();
+        saveChatsToStorage();
+    }
+
+    // 删除当前聊天
+    function deleteCurrentChat() {
+        if (!state.currentChatId) return;
+
+        const chatIndex = state.chats.findIndex(c => c.id === state.currentChatId);
+        if (chatIndex === -1) return;
+
+        // 如果只有一个聊天，不能删除
+        if (state.chats.length <= 1) {
+            alert('至少需要保留一个聊天');
+            return;
+        }
+
+        // 确认删除
+        if (!confirm('确定要删除这个聊天吗？')) {
+            return;
+        }
+
+        // 关闭当前的事件源
+        if (state.currentEventSource) {
+            state.currentEventSource.close();
+            state.currentEventSource = null;
+        }
+
+        // 删除聊天
+        state.chats.splice(chatIndex, 1);
+
+        // 切换到另一个聊天
+        const newCurrentChat = state.chats.length > 0 ? state.chats[0] : null;
+        if (newCurrentChat) {
+            state.currentChatId = newCurrentChat.id;
+        } else {
+            state.currentChatId = null;
+        }
+
+        renderChatList();
+        renderChatMessages();
+        saveChatsToStorage();
+    }
+
+    // 显示重命名模态框
+    function showRenameModal() {
+        if (!state.currentChatId) return;
+
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+        if (!chat) return;
+
+        document.getElementById('renameInput').value = chat.title;
+        document.getElementById('renameModal').classList.remove('hidden');
+        document.getElementById('renameInput').focus();
+    }
+
+    // 隐藏重命名模态框
+    function hideRenameModal() {
+        document.getElementById('renameModal').classList.add('hidden');
+    }
+
+    // 重命名当前聊天
+    function renameCurrentChat() {
+        if (!state.currentChatId) return;
+
+        const newTitle = document.getElementById('renameInput').value.trim();
+        if (!newTitle) {
+            alert('聊天标题不能为空');
+            return;
+        }
+
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+        if (chat) {
+            chat.title = newTitle;
+            renderChatList();
+            renderChatMessages();
+            saveChatsToStorage();
+        }
+
+        hideRenameModal();
+    }
+
+    // 发送消息
+    function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const message = input.value.trim();
+
+        if (!message) {
+            alert('请输入消息内容');
+            return;
+        }
+
+        if (!state.currentChatId) {
+            alert('请先选择一个聊天');
+            return;
+        }
+
+        // 获取当前聊天
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+        if (!chat) return;
+
+        // 获取模型
+        const model = document.getElementById('modelSelect').value;
+        chat.model = model;
+
+        // 添加用户消息到聊天记录
+        const userMessage = {
+            id: 'msg_' + Date.now(),
+            role: 'user',
+            content: message,
+            timestamp: new Date().toISOString()
+        };
+
+        chat.messages.push(userMessage);
+
+        // 添加AI消息占位符到聊天记录
+        const aiMessageId = 'msg_' + (Date.now() + 1);
+        const aiMessage = {
+            id: aiMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date().toISOString(),
+            isStreaming: true
+        };
+
+        chat.messages.push(aiMessage);
+
+        // 清空输入框
+        input.value = '';
+        input.focus();
+
+        // 渲染消息
+        renderChatMessages();
+
+        // 滚动到底部
+        scrollToBottom();
+
+        // 显示正在输入指示器
+        document.getElementById('typingIndicator').classList.remove('hidden');
+        state.isTyping = true;
+
+        // 发送API请求
+        callAPIStreaming(message, model, aiMessageId);
+
+        // 保存聊天记录
+        saveChatsToStorage();
+    }
+
+    // 调用流式API
+    function callAPIStreaming(message, model, aiMessageId) {
+        // 关闭之前的事件源
+        if (state.currentEventSource) {
+            state.currentEventSource.close();
+        }
+
+        // 对消息进行编码
+        const encodedMessage = encodeURIComponent(message);
+
+        // 构建API URL（这里使用模拟接口，实际使用时应替换为真实API地址）
+        const apiUrl = `http://localhost:8090/api/v1/ollama/generate_stream?model=${model}&message=${encodedMessage}`;
+
+        // 由于实际API可能不可用，这里使用模拟的流式响应
+        // 在实际部署时，请取消注释上面的真实API URL并删除下面的模拟代码
+        // simulateStreamingResponse(aiMessageId, message);
+
+        // 实际使用时请使用以下代码：
+        const eventSource = new EventSource(apiUrl);
+        state.currentEventSource = eventSource;
+
+        let fullResponse = '';
+
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                // 根据提供的API响应格式解析数据
+                if (data && data.result && data.result.output) {
+                    const content = data.result.output.content || '';
+                    fullResponse += content;
+
+                    // 更新AI消息
+                    updateAIMessage(aiMessageId, fullResponse);
+
+                    // 检查是否结束
+                    const finishReason = data.result.metadata?.finishReason;
+                    if (finishReason === 'STOP') {
+                        eventSource.close();
+                        state.currentEventSource = null;
+                        finishStreaming(aiMessageId, fullResponse);
+                    }
+                }
+            } catch (error) {
+                console.error('解析响应数据失败:', error);
+            }
+        };
+
+        eventSource.onerror = function(error) {
+            console.error('EventSource错误:', error);
+            eventSource.close();
+            state.currentEventSource = null;
+
+            // 如果还没有收到任何响应，显示错误消息
+            const chat = state.chats.find(c => c.id === state.currentChatId);
+            if (chat) {
+                const aiMessage = chat.messages.find(m => m.id === aiMessageId);
+                if (aiMessage && aiMessage.content === '') {
+                    aiMessage.content = '抱歉，请求AI服务时出现错误。请检查网络连接或稍后重试。';
+                    aiMessage.isStreaming = false;
+                    renderChatMessages();
+                    saveChatsToStorage();
+                }
+            }
+
+            document.getElementById('typingIndicator').classList.add('hidden');
+            state.isTyping = false;
+        };
+    }
+
+    // 模拟流式响应（仅供演示使用）
+    function simulateStreamingResponse(aiMessageId, userMessage) {
+        // 根据用户消息生成模拟响应
+        let simulatedResponse = '';
+
+        if (userMessage.toLowerCase().includes('你好')) {
+            simulatedResponse = '你好！我是AI助手，很高兴为您服务。有什么我可以帮助您的吗？';
+        } else if (userMessage.toLowerCase().includes('天气')) {
+            simulatedResponse = '我无法实时获取天气信息。建议您查看天气预报应用或网站获取最新天气情况。';
+        } else if (userMessage.toLowerCase().includes('名字')) {
+            simulatedResponse = '我是基于深度求索模型的AI助手，专门为您提供问题解答和对话服务。';
+        } else if (userMessage.toLowerCase().includes('时间')) {
+            const now = new Date();
+            simulatedResponse = `现在时间是 ${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 ${now.getHours()}时${now.getMinutes()}分。`;
+        } else if (userMessage.includes('1+1')) {
+            simulatedResponse = '1+1等于2。这是一个基础的数学加法运算。';
+        } else {
+            simulatedResponse = `我理解您的问题："${userMessage}"。作为AI助手，我会尽力为您提供准确和有用的信息。如果您有具体的问题或需要帮助的领域，请告诉我更多细节。`;
+        }
+
+        // 模拟流式输出
+        let index = 0;
+        const interval = setInterval(() => {
+            if (index < simulatedResponse.length) {
+                // 更新AI消息
+                updateAIMessage(aiMessageId, simulatedResponse.substring(0, index + 1));
+                index++;
+                scrollToBottom();
+            } else {
+                clearInterval(interval);
+                finishStreaming(aiMessageId, simulatedResponse);
+            }
+        }, 50); // 每50毫秒输出一个字符
+    }
+
+    // 更新AI消息内容
+    function updateAIMessage(messageId, content) {
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+        if (!chat) return;
+
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+            message.content = content;
+
+            // 更新UI
+            const messageElement = document.getElementById(`message-${messageId}`);
+            if (messageElement) {
+                const contentElement = messageElement.querySelector('.message-content');
+                if (contentElement) {
+                    contentElement.textContent = content;
+                }
+            }
+        }
+    }
+
+    // 完成流式响应
+    function finishStreaming(messageId, fullContent) {
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+        if (!chat) return;
+
+        const message = chat.messages.find(m => m.id === messageId);
+        if (message) {
+            message.content = fullContent;
+            message.isStreaming = false;
+        }
+
+        // 隐藏正在输入指示器
+        document.getElementById('typingIndicator').classList.add('hidden');
+        state.isTyping = false;
+
+        // 保存聊天记录
+        saveChatsToStorage();
+    }
+
+    // 处理按键事件
+    function handleKeyPress(event) {
+        // Enter发送，Shift+Enter换行
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    // 渲染聊天列表
+    function renderChatList() {
+        const chatListContainer = document.getElementById('chatList');
+        chatListContainer.innerHTML = '';
+
+        state.chats.forEach(chat => {
+            const isActive = chat.id === state.currentChatId;
+
+            const chatElement = document.createElement('div');
+            chatElement.className = `flex items-center p-3 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-indigo-50 border border-indigo-100' : 'hover:bg-gray-100'}`;
+            chatElement.dataset.chatId = chat.id;
+
+            chatElement.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center">
+                            <div class="w-2 h-2 rounded-full ${isActive ? 'bg-indigo-600' : 'bg-gray-400'} mr-2"></div>
+                            <p class="text-sm font-medium text-gray-800 truncate">${chat.title}</p>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">${formatDate(chat.createdAt)}</p>
+                    </div>
+                    <div class="ml-2 text-gray-400">
+                        <i class="fas fa-comment text-sm"></i>
+                    </div>
+                `;
+
+            chatElement.addEventListener('click', () => setCurrentChat(chat.id));
+            chatListContainer.appendChild(chatElement);
+        });
+    }
+
+    // 渲染聊天消息
+    function renderChatMessages() {
+        const chatContainer = document.getElementById('chatContainer');
+        const chat = state.chats.find(c => c.id === state.currentChatId);
+
+        // 更新当前聊天标题
+        document.getElementById('currentChatTitle').textContent = chat ? chat.title : '新聊天';
+
+        if (!chat || chat.messages.length === 0) {
+            // 显示欢迎消息
+            chatContainer.innerHTML = `
+                    <div class="flex justify-center">
+                        <div class="max-w-2xl w-full">
+                            <div class="text-center py-12">
+                                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 mb-4">
+                                    <i class="fas fa-robot text-2xl text-indigo-600"></i>
+                                </div>
+                                <h3 class="text-2xl font-medium text-gray-800 mb-2">AI对话助手</h3>
+                                <p class="text-gray-600">这是一个新的对话，请在下方的输入框中开始提问</p>
+                                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-md mx-auto">
+                                    <div class="p-3 bg-gray-50 rounded-lg text-left">
+                                        <p class="text-sm font-medium text-gray-800">示例问题 1</p>
+                                        <p class="text-xs text-gray-600 mt-1">请解释一下人工智能的基本概念</p>
+                                    </div>
+                                    <div class="p-3 bg-gray-50 rounded-lg text-left">
+                                        <p class="text-sm font-medium text-gray-800">示例问题 2</p>
+                                        <p class="text-xs text-gray-600 mt-1">如何学习编程？</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            return;
+        }
+
+        // 渲染所有消息
+        chatContainer.innerHTML = '';
+
+        chat.messages.forEach(message => {
+            const messageElement = createMessageElement(message);
+            chatContainer.appendChild(messageElement);
+        });
+
+        // 滚动到底部
+        setTimeout(scrollToBottom, 100);
+    }
+
+    // 创建消息元素
+    function createMessageElement(message) {
+        const isUser = message.role === 'user';
+
+        const messageElement = document.createElement('div');
+        messageElement.id = `message-${message.id}`;
+        messageElement.className = `flex ${isUser ? 'justify-end' : 'justify-start'} message-fade-in`;
+
+        const messageBubble = document.createElement('div');
+        messageBubble.className = `max-w-3xl ${isUser ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800'} rounded-2xl px-4 py-3`;
+
+        // 消息头（角色和时间）
+        const messageHeader = document.createElement('div');
+        messageHeader.className = `flex items-center justify-between mb-1 ${isUser ? 'text-indigo-100' : 'text-gray-600'}`;
+
+        messageHeader.innerHTML = `
+                <div class="flex items-center">
+                    <div class="w-6 h-6 rounded-full ${isUser ? 'bg-indigo-400' : 'bg-indigo-100'} flex items-center justify-center mr-2">
+                        <i class="fas ${isUser ? 'fa-user' : 'fa-robot'} text-xs ${isUser ? 'text-white' : 'text-indigo-600'}"></i>
+                    </div>
+                    <span class="text-xs font-medium">${isUser ? '您' : 'AI助手'}</span>
+                </div>
+                <span class="text-xs">${formatTime(message.timestamp)}</span>
+            `;
+
+        // 消息内容
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        messageContent.textContent = message.content || '';
+
+        // 如果是AI消息且正在流式输出，添加光标
+        if (message.isStreaming) {
+            const cursor = document.createElement('span');
+            cursor.className = 'typing-cursor';
+            messageContent.appendChild(cursor);
+        }
+
+        messageBubble.appendChild(messageHeader);
+        messageBubble.appendChild(messageContent);
+        messageElement.appendChild(messageBubble);
+
+        return messageElement;
+    }
+
+    // 滚动到底部
+    function scrollToBottom() {
+        const chatContainer = document.getElementById('chatContainer');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // 格式化日期
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+            return '今天';
+        } else if (diffDays === 1) {
+            return '昨天';
+        } else if (diffDays < 7) {
+            return `${diffDays}天前`;
+        } else {
+            return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+        }
+    }
+
+    // 格式化时间
+    function formatTime(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    }
+</script>
+</body>
+</html>
